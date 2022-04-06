@@ -1,6 +1,10 @@
 require("dotenv").config();
 const express = require("express");
 const mongoose = require("mongoose");
+const cors = require("cors");
+const helmet = require("helmet");
+const jwt = require("jsonwebtoken");
+const bcrypt = require("bcrypt");
 const app = express();
 
 const PORT = process.env.PORT || 3001;
@@ -21,18 +25,52 @@ mongoose.connect(process.env.MONGO_URI, (err) => {
 
 // model
 const user = require("./models/user.model");
+const member = require("./models/member.model");
 
 // middleware
 app.use(express.json());
+app.use(cors());
+app.use(helmet());
+const verifyUser = require("./auth/auth");
 
 // Routes
+// Login
+app.post("/login", async (req, res) => {
+  const { username, password } = req.body;
+  const Member = await member.findOne({ username });
+  if (Member == null) {
+    res.sendStatus(401);
+    return;
+  }
+  bcrypt.compare(password, Member.hash, (err, result) => {
+    if (err) res.sendStatus(401);
+    else if (!result) res.sendStatus(401);
+    else {
+      jwt.sign(
+        { id: Member._id },
+        process.env.JWT_SECRET,
+        { expiresIn: "15m" },
+        (err, token) => {
+          if (err) res.sendStatus(500);
+          else
+            res.json({
+              success: true,
+              token,
+            });
+        }
+      );
+    }
+  });
+});
+
 // Get all users
-app.get("/", async (req, res) => {
+// Only logged in users can view all users
+app.get("/", verifyUser, async (req, res) => {
   const users = await user.find({});
   res.json(users);
 });
 
-// Sign in
+// Sign in - guest
 app.post("/signin", async (req, res) => {
   // check for duplicates
   try {
